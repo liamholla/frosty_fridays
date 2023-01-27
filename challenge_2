@@ -1,0 +1,79 @@
+-- create parquet file format
+create or replace file format challenge_2_parquet_format
+    type = parquet ;
+    
+-- create a temporary stage for the parquet data    
+create or replace temporary stage challenge_2_parquet_stage
+    url = 's3://frostyfridaychallenges/challenge_2/employees.parquet'
+    file_format = challenge_2_parquet_format ;
+        
+-- check the table that is going to be made by infering the scheme from the parqut file    
+select generate_column_description(array_agg(object_construct(*)), 'table') as columns
+  from table (
+    infer_schema(
+      location=>'@challenge_2_parquet_stage/',
+      file_format=>'challenge_2_parquet_format'
+    )
+  ); 
+    
+-- create the table, infering the schema fro the parquet format. Make sure to use the ignore_case option
+create or replace table challenge_2_parquet_table using template
+(select array_agg(object_construct(*)) from table 
+ (
+    infer_schema(
+      location=>'@challenge_2_parquet_stage/'
+      ,file_format=>'challenge_2_parquet_format'
+      ,ignore_case => true
+      
+    )
+   )) ;
+
+-- check the table schema
+desc table challenge_2_parquet_table ;
+ 
+-- copy the data from the stage into the table
+copy into challenge_2_parquet_table 
+from 
+(select
+ $1:employee_id
+,$1:first_name
+,$1:last_name
+,$1:email
+,$1:street_num
+,$1:street_name
+,$1:city
+,$1:postcode
+,$1:country
+,$1:country_code
+,$1:time_zone 
+,$1:payroll_iban
+,$1:dept        
+,$1:job_title
+,$1:education
+,$1:title    
+,$1:suffix     
+
+from '@challenge_2_parquet_stage')
+;
+
+-- create a view from the table that contains the 3 columns of interest
+create or replace view challenge_2_parquet_view
+as
+(select
+  employee_id
+ ,dept
+ ,job_title 
+from challenge_2_parquet_table);
+
+-- create a stream on the view
+create or replace stream challenge_2_parquet_stream on view challenge_2_parquet_view
+;
+
+-- update the table
+UPDATE challenge_2_parquet_table SET COUNTRY = 'Japan' WHERE EMPLOYEE_ID = '8';
+UPDATE challenge_2_parquet_table SET LAST_NAME = 'Forester' WHERE EMPLOYEE_ID = '22';
+UPDATE challenge_2_parquet_table SET DEPT = 'Marketing' WHERE EMPLOYEE_ID = '25';
+UPDATE challenge_2_parquet_table SET TITLE = 'Ms' WHERE EMPLOYEE_ID = '32';
+UPDATE challenge_2_parquet_table SET JOB_TITLE = 'Senior Financial Analyst' WHERE EMPLOYEE_ID = '68';
+
+select * from challenge_2_parquet_stream;
